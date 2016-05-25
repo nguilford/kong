@@ -85,11 +85,21 @@ end
 
 local HTTPS = "https"
 
-local function is_https(conf)
+-- checks whether a request is https or was originally https (but already terminated)
+-- @return boolean, or nil+error
+local function check_https(conf)
   local result = ngx.var.scheme:lower() == HTTPS
   if not result and conf.accept_http_if_already_terminated then
     local forwarded_proto_header = ngx.req.get_headers()["x-forwarded-proto"]
-    result = forwarded_proto_header and forwarded_proto_header:lower() == HTTPS
+    if type(forwarded_proto_header) == "string" then 
+      result = forwarded_proto_header:lower() == HTTPS
+    else
+      if type(forwarded_proto_header) == "table" then
+        -- we could use the first entry (lower security), or check the contents of each of them (slow). So for now defensive, and error
+        -- out on multiple entries for the x-forwarded-proto header.
+        return nil, "Only one X-Forwarded-Proto header allowed"
+      end
+    end
   end
   return result
 end
@@ -133,8 +143,9 @@ local function authorize(conf)
   local state = parameters[STATE]
   local redirect_uri, client, parsed_redirect_uri
 
-  if not is_https(conf) then
-    response_params = {[ERROR] = "access_denied", error_description = "You must use HTTPS"}
+  local is_https, err = check_https(conf)
+  if not is_https then
+    response_params = {[ERROR] = "access_denied", error_description = err or "You must use HTTPS"}
   else
     if conf.provision_key ~= parameters.provision_key then
       response_params = {[ERROR] = "invalid_provision_key", error_description = "Invalid Kong provision_key"}
@@ -251,8 +262,9 @@ local function issue_token(conf)
   local parameters = retrieve_parameters()
   local state = parameters[STATE]
 
-  if not is_https(conf) then
-    response_params = {[ERROR] = "access_denied", error_description = "You must use HTTPS"}
+  local is_https, err = check_https(conf)
+  if not is_https then
+    response_params = {[ERROR] = "access_denied", error_description = err or "You must use HTTPS"}
   else
     local grant_type = parameters[GRANT_TYPE]
     if not (grant_type == GRANT_AUTHORIZATION_CODE or

@@ -182,6 +182,16 @@ describe("Authentication Plugin", function()
         assert.truthy(rex.match(body.redirect_uri, "^http://google\\.com/kong\\?code=[\\w]{32,32}$"))
       end)
 
+      pending("should fail when not under HTTPS but accept_http_if_already_terminated is true with multiple forwarded-proto headers", function()
+        -- pending because the testsetup doesn't allow for duplicate headers in a http request, the POST below will error out
+        local response, status = http_client.post(PROXY_URL.."/oauth2/authorize", { provision_key = "provision123", authenticated_userid = "id123", client_id = "clientid123", scope = "email", response_type = "code" }, {host = "oauth2_6.com", ["X-Forwarded-Proto"] = {"https","https"}})
+        local body = cjson.decode(response)
+        assert.are.equal(400, status)
+        assert.are.equal(2, utils.table_size(body))
+        assert.are.equal("access_denied", body.error)
+        assert.are.equal("Only one X-Forwarded-Proto header allowed", body.error_description)
+      end)
+
       it("should fail when not under HTTPS and accept_http_if_already_terminated is false", function()
         local response, status = http_client.post(PROXY_URL.."/oauth2/authorize", { provision_key = "provision123", authenticated_userid = "id123", client_id = "clientid123", scope = "email", response_type = "code" }, {host = "oauth2.com", ["X-Forwarded-Proto"] = "https"})
         local body = cjson.decode(response)
