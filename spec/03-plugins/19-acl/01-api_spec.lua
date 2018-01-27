@@ -61,6 +61,7 @@ describe("Plugin: acl (API)", function()
     end)
 
     describe("PUT", function()
+      local resource
       it("updates an ACL's groupname", function()
         local res = assert(admin_client:send {
           method = "PUT",
@@ -73,20 +74,48 @@ describe("Plugin: acl (API)", function()
           }
         })
         local body = assert.res_status(201, res)
-        local json = cjson.decode(body)
-        assert.equal(consumer.id, json.consumer_id)
-        assert.equal("pro", json.group)
+        local resource = cjson.decode(body)
+        assert.equal(consumer.id, resource.consumer_id)
+        assert.equal("pro", resource.group)
       end)
-      describe("errors", function()
-        it("returns bad request", function()
-          local res = assert(admin_client:send {
+      it("is idempotent #nick", function()
+        local res = assert(admin_client:send {
           method = "PUT",
           path = "/consumers/bob/acls",
-          body = {},
           headers = {
             ["Content-Type"] = "application/json"
           }
+          body = resource
         })
+        local body = assert.res_status(201, res)
+        local json = cjson.decode(body)
+        assert.are.same(resource, json)
+      end)
+      describe("errors", function()
+        it("returns conflict #nick", function()
+          local res = assert(admin_client:send {
+            method = "PUT",
+            path = "/consumers/bob/acls",
+            body = {
+              group = "pro"
+            },
+            headers = {
+              ["Content-Type"] = "application/json"
+            }
+          })
+          local body = assert.res_status(409, res)
+          local json = cjson.decode(body)
+          assert.same({ group = "ACL group already exists for this consumer" }, json)
+        end)
+        it("returns bad request", function()
+          local res = assert(admin_client:send {
+            method = "PUT",
+            path = "/consumers/bob/acls",
+            body = {},
+            headers = {
+              ["Content-Type"] = "application/json"
+            }
+          })
           local body = assert.res_status(400, res)
           local json = cjson.decode(body)
           assert.same({ group = "group is required" }, json)
